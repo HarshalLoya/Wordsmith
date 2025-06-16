@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wordle Clone</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <div class="header">
+      <h1>WORDLE</h1>
+      <p>Guess the 5-letter word in 6 tries</p>
+    </div>
+
+    <div class="game-container">
+      <div class="game-board" id="gameBoard">
+        <!-- Game board will be populated by JavaScript -->
+      </div>
+
+      <div class="input-section" id="inputSection">
+        <input
+          type="text"
+          id="guessInput"
+          class="guess-input"
+          maxlength="5"
+          placeholder="Enter guess"
+        />
+        <div>
+          <button id="submitGuess" class="button button-primary">
+            Submit Guess
+          </button>
+          <button id="newGame" class="button button-secondary">New Game</button>
+        </div>
+      </div>
+
+      <div class="keyboard" id="keyboard">
+        <div class="keyboard-row">
+          <button class="key" data-key="Q">Q</button>
+          <button class="key" data-key="W">W</button>
+          <button class="key" data-key="E">E</button>
+          <button class="key" data-key="R">R</button>
+          <button class="key" data-key="T">T</button>
+          <button class="key" data-key="Y">Y</button>
+          <button class="key" data-key="U">U</button>
+          <button class="key" data-key="I">I</button>
+          <button class="key" data-key="O">O</button>
+          <button class="key" data-key="P">P</button>
+        </div>
+        <div class="keyboard-row">
+          <button class="key" data-key="A">A</button>
+          <button class="key" data-key="S">S</button>
+          <button class="key" data-key="D">D</button>
+          <button class="key" data-key="F">F</button>
+          <button class="key" data-key="G">G</button>
+          <button class="key" data-key="H">H</button>
+          <button class="key" data-key="J">J</button>
+          <button class="key" data-key="K">K</button>
+          <button class="key" data-key="L">L</button>
+        </div>
+        <div class="keyboard-row">
+          <button class="key wide" data-key="ENTER">ENTER</button>
+          <button class="key" data-key="Z">Z</button>
+          <button class="key" data-key="X">X</button>
+          <button class="key" data-key="C">C</button>
+          <button class="key" data-key="V">V</button>
+          <button class="key" data-key="B">B</button>
+          <button class="key" data-key="N">N</button>
+          <button class="key" data-key="M">M</button>
+          <button class="key wide" data-key="BACKSPACE">⌫</button>
+        </div>
+      </div>
+
+      <div id="message" class="message" style="display: none"></div>
+      <div id="gameOver" class="game-over" style="display: none"></div>
+    </div>
+
+    <script>
+      class WordleGame {
+        constructor() {
+          this.currentRow = 0;
+          this.currentGuess = "";
+          this.gameOver = false;
+          this.keyboardState = {};
+
+          this.initializeBoard();
+          this.bindEvents();
+          this.loadGameState();
+        }
+
+        initializeBoard() {
+          const board = document.getElementById("gameBoard");
+          board.innerHTML = "";
+
+          for (let row = 0; row < 6; row++) {
+            const rowElement = document.createElement("div");
+            rowElement.className = "guess-row";
+            rowElement.id = `row-${row}`;
+
+            for (let col = 0; col < 5; col++) {
+              const letterBox = document.createElement("div");
+              letterBox.className = "letter-box";
+              letterBox.id = `box-${row}-${col}`;
+              rowElement.appendChild(letterBox);
+            }
+
+            board.appendChild(rowElement);
+          }
+        }
+
+        bindEvents() {
+          const input = document.getElementById("guessInput");
+          const submitBtn = document.getElementById("submitGuess");
+          const newGameBtn = document.getElementById("newGame");
+          const keyboard = document.getElementById("keyboard");
+
+          // Input events
+          input.addEventListener("input", (e) => {
+            e.target.value = e.target.value
+              .toUpperCase()
+              .replace(/[^A-Z]/g, "");
+            this.updateCurrentGuessDisplay(e.target.value);
+          });
+
+          input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+              this.submitGuess();
+            }
+          });
+
+          // Button events
+          submitBtn.addEventListener("click", () => this.submitGuess());
+          newGameBtn.addEventListener("click", () => this.startNewGame());
+
+          // Keyboard events
+          keyboard.addEventListener("click", (e) => {
+            if (e.target.classList.contains("key")) {
+              this.handleKeyboardClick(e.target.dataset.key);
+            }
+          });
+
+          // Physical keyboard events
+          document.addEventListener("keydown", (e) => {
+            this.handlePhysicalKeyboard(e);
+          });
+        }
+
+        handleKeyboardClick(key) {
+          const input = document.getElementById("guessInput");
+
+          if (key === "ENTER") {
+            this.submitGuess();
+          } else if (key === "BACKSPACE") {
+            input.value = input.value.slice(0, -1);
+            this.updateCurrentGuessDisplay(input.value);
+          } else if (input.value.length < 5) {
+            input.value += key;
+            this.updateCurrentGuessDisplay(input.value);
+          }
+        }
+
+        handlePhysicalKeyboard(e) {
+          if (this.gameOver) return;
+
+          const input = document.getElementById("guessInput");
+
+          if (e.key === "Enter") {
+            e.preventDefault();
+            this.submitGuess();
+          } else if (e.key === "Backspace") {
+            // Let the default backspace behavior work
+            setTimeout(() => this.updateCurrentGuessDisplay(input.value), 0);
+          } else if (/^[a-zA-Z]$/.test(e.key) && input.value.length < 5) {
+            // Let the default input behavior work
+            setTimeout(() => this.updateCurrentGuessDisplay(input.value), 0);
+          }
+        }
+
+        updateCurrentGuessDisplay(guess) {
+          if (this.gameOver) return;
+
+          for (let i = 0; i < 5; i++) {
+            const box = document.getElementById(`box-${this.currentRow}-${i}`);
+            if (i < guess.length) {
+              box.textContent = guess[i];
+              box.classList.add("filled");
+            } else {
+              box.textContent = "";
+              box.classList.remove("filled");
+            }
+          }
+        }
+
+        async submitGuess() {
+          const input = document.getElementById("guessInput");
+          const guess = input.value.trim();
+
+          if (guess.length !== 5) {
+            this.showMessage("Please enter a 5-letter word", "error");
+            return;
+          }
+
+          try {
+            const response = await fetch("/api/guess", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ guess }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+              this.showMessage(data.error, "error");
+              return;
+            }
+
+            this.processGuessResult(guess, data.result);
+            this.updateKeyboard(guess, data.result);
+
+            input.value = "";
+            this.currentRow++;
+
+            if (data.won) {
+              this.gameOver = true;
+              this.showGameOver(true, this.currentRow);
+            } else if (data.game_over) {
+              this.gameOver = true;
+              this.showGameOver(false, this.currentRow, data.target_word);
+            } else {
+              this.showMessage(
+                `${data.guesses_remaining} guesses remaining`,
+                "info"
+              );
+            }
+          } catch (error) {
+            this.showMessage(
+              "Error submitting guess. Please try again.",
+              "error"
+            );
+          }
+        }
+
+        processGuessResult(guess, result) {
+          for (let i = 0; i < 5; i++) {
+            const box = document.getElementById(`box-${this.currentRow}-${i}`);
+            box.textContent = guess[i];
+
+            setTimeout(() => {
+              box.classList.add(result[i]);
+            }, i * 100);
+          }
+        }
+
+        updateKeyboard(guess, result) {
+          for (let i = 0; i < 5; i++) {
+            const letter = guess[i];
+            const status = result[i];
+
+            // Update keyboard state (only if better than current state)
+            if (
+              !this.keyboardState[letter] ||
+              status === "correct" ||
+              (status === "present" && this.keyboardState[letter] !== "correct")
+            ) {
+              this.keyboardState[letter] = status;
+            }
+
+            // Update visual keyboard
+            const key = document.querySelector(`[data-key="${letter}"]`);
+            if (key) {
+              key.classList.remove("correct", "present", "absent");
+              key.classList.add(this.keyboardState[letter]);
+            }
+          }
+        }
+
+        showMessage(text, type) {
+          const messageDiv = document.getElementById("message");
+          messageDiv.textContent = text;
+          messageDiv.className = `message ${type}`;
+          messageDiv.style.display = "block";
+
+          setTimeout(() => {
+            messageDiv.style.display = "none";
+          }, 3000);
+        }
+
+        showGameOver(won, guesses, targetWord = null) {
+          const gameOverDiv = document.getElementById("gameOver");
+          const inputSection = document.getElementById("inputSection");
+
+          inputSection.style.display = "none";
+
+          let html = "";
+          if (won) {
+            html = `
+                        <h2>🎉 Congratulations!</h2>
+                        <p>You guessed the word in ${guesses} ${
+              guesses === 1 ? "try" : "tries"
+            }!</p>
+                    `;
+          } else {
+            html = `
+                        <h2>😔 Game Over</h2>
+                        <p>The word was: <strong>${targetWord}</strong></p>
+                        <p>Better luck next time!</p>
+                    `;
+          }
+
+          html += `
+                    <div class="stats">
+                        <div class="stat">
+                            <div class="stat-number">${guesses}</div>
+                            <div class="stat-label">Guesses</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-number">${won ? "100" : "0"}%</div>
+                            <div class="stat-label">Success</div>
+                        </div>
+                    </div>
+                    <button class="button button-primary" onclick="game.startNewGame()" style="margin-top: 20px;">
+                        Play Again
+                    </button>
+                `;
+
+          gameOverDiv.innerHTML = html;
+          gameOverDiv.style.display = "block";
+        }
+
+        async startNewGame() {
+          try {
+            const response = await fetch("/api/start-game", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            });
+
+            if (response.ok) {
+              this.resetGame();
+              this.showMessage("New game started!", "success");
+            }
+          } catch (error) {
+            this.showMessage(
+              "Error starting new game. Please refresh the page.",
+              "error"
+            );
+          }
+        }
+
+        resetGame() {
+          this.currentRow = 0;
+          this.gameOver = false;
+          this.keyboardState = {};
+
+          // Reset board
+          this.initializeBoard();
+
+          // Reset keyboard
+          document.querySelectorAll(".key").forEach((key) => {
+            key.classList.remove("correct", "present", "absent");
+          });
+
+          // Reset input
+          document.getElementById("guessInput").value = "";
+
+          // Show input section, hide game over
+          document.getElementById("inputSection").style.display = "flex";
+          document.getElementById("gameOver").style.display = "none";
+          document.getElementById("message").style.display = "none";
+
+          // Focus input
+          document.getElementById("guessInput").focus();
+        }
+
+        async loadGameState() {
+          try {
+            const response = await fetch("/api/game-state");
+            const data = await response.json();
+
+            if (data.has_active_game && data.guesses.length > 0) {
+              // Restore previous game state
+              this.currentRow = data.guesses.length;
+
+              // Replay guesses
+              data.guesses.forEach((guess, index) => {
+                this.replayGuess(guess.word, guess.result, index);
+                this.updateKeyboard(guess.word, guess.result);
+              });
+
+              if (data.game_over) {
+                this.gameOver = true;
+                this.showGameOver(
+                  data.won,
+                  data.guesses.length,
+                  data.target_word
+                );
+              }
+            } else {
+              // Start new game
+              this.startNewGame();
+            }
+          } catch (error) {
+            // If error loading state, start fresh
+            this.startNewGame();
+          }
+        }
+
+        replayGuess(word, result, rowIndex) {
+          for (let i = 0; i < 5; i++) {
+            const box = document.getElementById(`box-${rowIndex}-${i}`);
+            box.textContent = word[i];
+            box.classList.add(result[i]);
+          }
+        }
+      }
+
+      // Initialize game when page loads
+      let game;
+      document.addEventListener("DOMContentLoaded", () => {
+        game = new WordleGame();
+      });
+    </script>
+  </body>
+</html>
